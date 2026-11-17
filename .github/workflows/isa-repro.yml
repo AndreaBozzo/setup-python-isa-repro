@@ -1,0 +1,27 @@
+name: isa-repro
+on: workflow_dispatch
+
+jobs:
+  repro:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-user
+      - name: ISA notes
+        run: |
+          echo "setup-python python:"
+          readelf -n "$(readlink -f "$(which python)")" | grep 'ISA needed' || echo '  no ISA note'
+          echo "C control, runner's default gcc:"
+          echo 'int main(void){return 0;}' > c.c && gcc -O2 c.c -o c
+          readelf -n c | grep 'ISA needed' || echo '  no ISA note'
+      - name: Start both as a pre-AVX2 CPU (Westmere)
+        run: |
+          qemu-x86_64 -cpu Westmere ./c && echo 'C control starts'
+          LD_LIBRARY_PATH="$pythonLocation/lib" qemu-x86_64 -cpu Westmere \
+            "$(readlink -f "$(which python)")" -S -c 'print("python starts")'
