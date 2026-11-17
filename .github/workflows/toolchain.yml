@@ -1,0 +1,26 @@
+name: toolchain
+on: workflow_dispatch
+
+jobs:
+  inspect:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Where the ISA note comes from
+        run: |
+          echo "dpkg arch: $(dpkg --print-architecture)"
+          apt-config dump | grep -i -E 'variant|amd64v3' || echo "apt: no variant setting"
+          grep -h -i -E 'amd64v3|variant' /etc/apt/sources.list.d/* /etc/apt/sources.list 2>/dev/null | head -5 || true
+          echo "gcc: $(gcc -dumpversion), $(gcc -Q --help=target 2>/dev/null | grep -E '^\s+-march=' | head -1)"
+          gcc -v 2>&1 | grep -o -- '--with-arch[^ ]*' || echo "gcc: no --with-arch"
+          for f in /usr/lib/x86_64-linux-gnu/Scrt1.o /usr/lib/x86_64-linux-gnu/crti.o /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
+                   "$(gcc -print-libgcc-file-name)" "$(dirname "$(gcc -print-libgcc-file-name)")/crtbeginS.o" \
+                   /usr/lib/x86_64-linux-gnu/libc.so.6; do
+            printf '%s: ' "$f"; readelf -n "$f" 2>/dev/null | grep -o 'ISA needed: .*' | sort -u | head -1 || true; echo
+          done
+          echo "libc6: $(dpkg-query -W -f='${Version} ${Architecture}' libc6)"
+          echo 'int main(void){return 0;}' > c.c
+          gcc -O2 -c c.c -o c.o && printf 'c.o alone: ' && (readelf -n c.o | grep -o 'ISA needed: .*' || echo 'no note')
